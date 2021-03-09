@@ -1,9 +1,9 @@
 # Sample apps for Progress® Telerik® FiddlerCore Embedded Engine
 
-[FiddlerCore](https://www.telerik.com/fiddler/fiddlercore) is a cross-platform .NET library by Progress Telerik which allows capture 
+[FiddlerCore](https://www.telerik.com/fiddlercore) is a cross-platform .NET library by Progress Telerik which allows capture 
 and modification of HTTP/HTTPS traffic. Some of the most popular applications using FiddlerCore are 
-[Telerik Fiddler](https://www.telerik.com/fiddler) (.NET Framework-based and running on Windows) and 
-[Fiddler Everywhere](https://www.telerik.com/fiddler-everywhere) (.NET Core-based and running on Windows, Mac, and Linux).
+[Telerik Fiddler](https://www.telerik.com/download/fiddler) (.NET Framework-based and running on Windows) and 
+[Fiddler Everywhere](https://www.telerik.com/fiddler) (.NET Core-based and running on Windows, Mac, and Linux).
 
 This repository contains sample applications demonstrating possible usages of the FiddlerCore API. 
 
