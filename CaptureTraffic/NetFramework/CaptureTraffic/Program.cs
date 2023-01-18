@@ -63,11 +63,23 @@ namespace CaptureTraffic
                 // be enabled; this allows FiddlerCore to permit modification of
                 // the response in the BeforeResponse handler rather than streaming
                 // the response to the client as the response comes in.
-                session.bBufferResponse = false;
+                session.bBufferResponse = true;
 
                 // Set this property if you want FiddlerCore to automatically authenticate by
                 // answering Digest/Negotiate/NTLM/Kerberos challenges itself
                 // session["X-AutoAuth"] = "(default)";
+
+                // using X-PROCESSINFO to detect sessions by specific processes
+                if (session["X-PROCESSINFO"].Contains("brave")) {
+                    Console.WriteLine(">>>>>>>>>>>>>>>> ProcessInfo:" + session["X-PROCESSINFO"]);
+                }
+
+                // using x-no-decrypt to skip decryption for specific sessions
+                if (session.HTTPMethodIs("CONNECT") && session["X-PROCESSINFO"].Contains("brave"))
+                {
+                    Console.WriteLine(">>>>>>>>>>>>>>>> ProcessInfo:" + session["X-PROCESSINFO"]);
+                    session["x-no-decrypt"] = "boring process";
+                }
 
                 try
                 {
@@ -101,9 +113,19 @@ namespace CaptureTraffic
             }
             */
 
-            /*
-            Fiddler.FiddlerApplication.BeforeResponse += session => {
-                // Console.WriteLine($"{session.id}:HTTP {session.responseCode} for {session.fullUrl}");
+
+            FiddlerApplication.BeforeResponse += session =>
+            {
+
+                if (session.uriContains("example.com"))
+                {
+                    Console.WriteLine($"{session.id}:HTTP {session.responseCode} for {session.fullUrl}");
+
+                    // using utilDecodeResponse and utilReplaceInResponse to modify a response
+                    session.utilDecodeResponse();
+                    session.utilReplaceInResponse("<h1>", "<h3><i>");
+                    session.utilReplaceInResponse("</h1>", "</i></h3>");
+                }
 
                 // Uncomment the following two statements to decompress/unchunk the
                 // HTTP response and subsequently modify any HTTP responses to replace 
@@ -111,7 +133,7 @@ namespace CaptureTraffic
                 // set session.bBufferResponse = true inside the BeforeRequest event handler above.
                 //
                 //session.utilDecodeResponse(); session.utilReplaceInResponse("Telerik", "Progress");
-            };*/
+            };
 
             FiddlerApplication.AfterSessionComplete += session =>
             {
@@ -179,6 +201,9 @@ namespace CaptureTraffic
                     .DecryptSSL()
                     .OptimizeThreadPool()
                     .Build();
+
+
+            CONFIG.DecryptWhichProcesses = ProcessFilterCategories.Browsers;
 
             FiddlerApplication.Startup(startupSettings);
 
