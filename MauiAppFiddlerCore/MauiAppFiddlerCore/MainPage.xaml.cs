@@ -16,7 +16,7 @@ public partial class MainPage : ContentPage
 	private void OnCounterClicked(object sender, EventArgs e)
 	{
 
-        count = ((App)Application.Current).capturedSessionsCount;
+		count++; //((App)Application.Current).capturedSessionsCount;
 
 
         CounterBtn.Text = $"Captured sessions so far: {count}";

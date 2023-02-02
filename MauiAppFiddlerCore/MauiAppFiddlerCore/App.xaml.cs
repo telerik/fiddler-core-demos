@@ -1,4 +1,12 @@
 ﻿using Fiddler;
+using System.Diagnostics;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Threading.Tasks;
 using System.Reflection;
 
 namespace MauiAppFiddlerCore;
@@ -6,7 +14,8 @@ namespace MauiAppFiddlerCore;
 public partial class App : Application
 {
     public int capturedSessionsCount = 0;
-
+    
+    private static List<Session> sessions = new List<Session>();
 
     public App()
     {
@@ -82,7 +91,7 @@ public partial class App : Application
 
     private static void FiddlerApplication_AfterSessionComplete(Session oSession)
     {
-        capturedSessionsCount++; // for demo purposes only
+        ((App)Application.Current).capturedSessionsCount++; // for demo purposes only
 
         sessions.Add(oSession);
     }
