@@ -7,11 +7,15 @@ using System.ComponentModel.Composition.Hosting;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Policy;
 using System.Text;
 using System.Threading;
 using Fiddler;
+using Org.BouncyCastle.Asn1.Ocsp;
+using Org.BouncyCastle.Asn1.X509;
 using Telerik.NetworkConnections;
 
 namespace CaptureTraffic
@@ -41,17 +45,15 @@ namespace CaptureTraffic
 
         private static void AttachEventListeners()
         {
-            //
             // It is important to understand that FiddlerCore calls event handlers on session-handling
             // background threads.  If you need to properly synchronize to the UI-thread (say, because
             // you're adding the sessions to a list view) you must call .Invoke on a delegate on the 
             // window handle.
             // 
-            // If you are writing to a non-threadsafe data structure (e.g. List<T>) you must
+            // If you are writing to a non-thread safe data structure (e.g. List<T>) you must
             // use a Monitor or other mechanism to ensure safety.
-            //
 
-            // Simply echo notifications to the console.  Because Fiddler.CONFIG.QuietMode=true 
+            // Simply echo notifications to the console. Because Fiddler.CONFIG.QuietMode=true 
             // by default, we must handle notifying the user ourselves.
             FiddlerApplication.OnNotification += (o, nea) => Console.WriteLine($"** NotifyUser: {nea.NotifyString}");
 
@@ -59,6 +61,13 @@ namespace CaptureTraffic
 
             FiddlerApplication.BeforeRequest += session =>
             {
+                string fullUrl = session.fullUrl;
+                string clientIP = session.clientIP;
+                int clientPort = session.clientPort;
+
+                Console.WriteLine($"*** Client IP: {clientIP}; Client Port: {clientPort}");
+                Console.WriteLine($"*** Request URL: {fullUrl}");
+
                 // In order to enable response tampering, buffering mode MUST
                 // be enabled; this allows FiddlerCore to permit modification of
                 // the response in the BeforeResponse handler rather than streaming
@@ -69,15 +78,16 @@ namespace CaptureTraffic
                 // answering Digest/Negotiate/NTLM/Kerberos challenges itself
                 // session["X-AutoAuth"] = "(default)";
 
-                // using X-PROCESSINFO to detect sessions by specific processes
+                // Using X-PROCESSINFO flag to detect sessions by specific processes.
+                // Learn more about the available FiddlerCore flags here: https://docs.telerik.com/fiddlercore/basic-usage/session-flags
                 if (session["X-PROCESSINFO"].Contains("brave")) {
-                    Console.WriteLine(">>>>>>>>>>>>>>>> ProcessInfo:" + session["X-PROCESSINFO"]);
+                    Console.WriteLine(">> ProcessInfo:" + session["X-PROCESSINFO"]);
                 }
 
                 // using x-no-decrypt to skip decryption for specific sessions
                 if (session.HTTPMethodIs("CONNECT") && session["X-PROCESSINFO"].Contains("brave"))
                 {
-                    Console.WriteLine(">>>>>>>>>>>>>>>> ProcessInfo:" + session["X-PROCESSINFO"]);
+                    Console.WriteLine(">> ProcessInfo:" + session["X-PROCESSINFO"]);
                     session["x-no-decrypt"] = "boring process";
                 }
 
@@ -121,23 +131,20 @@ namespace CaptureTraffic
                 {
                     Console.WriteLine($"{session.id}:HTTP {session.responseCode} for {session.fullUrl}");
 
-                    // using utilDecodeResponse and utilReplaceInResponse to modify a response
+                    // Using utilDecodeResponse and utilReplaceInResponse to decompress/unchunk the
+                    // HTTP response and subsequently modify any HTTP responses. You MUST also
+                    // set session.bBufferResponse = true inside the BeforeRequest event handler above.
+
                     session.utilDecodeResponse();
+                    session.utilReplaceInResponse("Example", "Fiddler Everywhere");
                     session.utilReplaceInResponse("<h1>", "<h3><i>");
                     session.utilReplaceInResponse("</h1>", "</i></h3>");
                 }
-
-                // Uncomment the following two statements to decompress/unchunk the
-                // HTTP response and subsequently modify any HTTP responses to replace 
-                // instances of the word "Telerik" with "Progress". You MUST also
-                // set session.bBufferResponse = true inside the BeforeRequest event handler above.
-                //
-                //session.utilDecodeResponse(); session.utilReplaceInResponse("Telerik", "Progress");
             };
 
             FiddlerApplication.AfterSessionComplete += session =>
             {
-                //Console.WriteLine($"Finished session: {oS.fullUrl}");
+                //Console.WriteLine($"Finished session: {session.fullUrl}");
 
                 int sessionsCount = 0;
                 try
@@ -195,18 +202,20 @@ namespace CaptureTraffic
         {
             FiddlerCoreStartupSettings startupSettings =
                 new FiddlerCoreStartupSettingsBuilder()
-                    .ListenOnPort(fiddlerCoreListenPort)
-                    .RegisterAsSystemProxy()
-                    .ChainToUpstreamGateway()
-                    .DecryptSSL()
-                    .OptimizeThreadPool()
+                    .ListenOnPort(fiddlerCoreListenPort) // Specifies the port on which FiddlerCore will listen. If 0 is used, random port is assigned.
+                    .AllowRemoteClients() // Allows FiddlerCore to accept requests from outside of the current machine, e.g.remote computers and devices.
+                    .RegisterAsSystemProxy() // Modifies the local LAN connection's proxy settings to point to the port on which FiddlerCore is listening on localhost.
+                    .ChainToUpstreamGateway() // Sets the current LAN connection's proxy settings as an upstream gateway proxy.
+                                              // For example, if the application is running in a corporate environment behind a corporate proxy,
+                                              // the corporate proxy will be used as an upstream gateway proxy for FiddlerCore.
+                    .DecryptSSL() // Enables decryption of HTTPS traffic.
+                                  // Use CertificateProvider to load certificate authority file https://docs.telerik.com/fiddlercore/basic-usage/use-custom-root-certificate
+                    .OptimizeThreadPool() // Optimizes the thread pool to better handle multiple simultaneous threads.
+                                          // This is often convenient, as each Session is handled in a different thread.
+                                          // Under the hood, this methods uses ThreadPool.SetMinThreads with a value larger that the default one.
                     .Build();
-
-
             CONFIG.DecryptWhichProcesses = ProcessFilterCategories.Browsers;
-
             FiddlerApplication.Startup(startupSettings);
-
             FiddlerApplication.Log.LogString($"Created endpoint listening on port {CONFIG.ListenPort}");
         }
 
@@ -286,7 +295,7 @@ namespace CaptureTraffic
         {
             WriteCommandResponse("Shutting down...");
 
-            FiddlerApplication.Shutdown();
+            FiddlerApplication.Shutdown(); // Shuts down FiddlerCore, and reverts the proxy settings to the original ones, in case they were modified on startup.
         }
 
         private static void SaveSessionsToDesktop(IEnumerable<Session> sessions, string password)
@@ -358,15 +367,17 @@ namespace CaptureTraffic
         private static void WriteCommandResponse(string s)
         {
             ConsoleColor oldColor = Console.ForegroundColor;
-            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine(s);
             Console.ForegroundColor = oldColor;
         }
 
         private static void WriteSessions(IEnumerable<Session> sessions)
         {
+            ConsoleColor oldBgColor = Console.BackgroundColor;
             ConsoleColor oldColor = Console.ForegroundColor;
-            Console.ForegroundColor = ConsoleColor.White;
+            Console.BackgroundColor = ConsoleColor.DarkBlue;
+            Console.ForegroundColor = ConsoleColor.Yellow;
             StringBuilder sb = new StringBuilder($"Session list contains:{Environment.NewLine}");
             try
             {
@@ -383,6 +394,7 @@ namespace CaptureTraffic
             }
 
             Console.Write(sb.ToString());
+            Console.BackgroundColor = oldBgColor;
             Console.ForegroundColor = oldColor;
         }
 
