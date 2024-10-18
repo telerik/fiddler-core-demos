@@ -1,0 +1,6 @@
+﻿{
+    "configProperties": {
+        "System.Threading.ThreadPool.MinThreads": 20,
+        "System.GC.Server": true
+    }
+}
