@@ -3,16 +3,12 @@
 */
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.Composition.Hosting;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using Fiddler;
-using Telerik.NetworkConnections;
 
 namespace CaptureTraffic
 {
@@ -51,10 +47,6 @@ namespace CaptureTraffic
             // use a Monitor or other mechanism to ensure safety.
             //
 
-            // Simply echo notifications to the console.  Because Fiddler.CONFIG.QuietMode=true 
-            // by default, we must handle notifying the user ourselves.
-            FiddlerApplication.OnNotification += (o, nea) => Console.WriteLine($"** NotifyUser: {nea.NotifyString}");
-
             FiddlerApplication.Log.OnLogString += (o, lea) => Console.WriteLine($"** LogString: {lea.LogString}");
 
             FiddlerApplication.BeforeRequest += session =>
@@ -63,23 +55,11 @@ namespace CaptureTraffic
                 // be enabled; this allows FiddlerCore to permit modification of
                 // the response in the BeforeResponse handler rather than streaming
                 // the response to the client as the response comes in.
-                session.bBufferResponse = true;
+                session.bBufferResponse = false;
 
                 // Set this property if you want FiddlerCore to automatically authenticate by
                 // answering Digest/Negotiate/NTLM/Kerberos challenges itself
                 // session["X-AutoAuth"] = "(default)";
-
-                // using X-PROCESSINFO to detect sessions by specific processes
-                if (session["X-PROCESSINFO"].Contains("brave")) {
-                    Console.WriteLine(">>>>>>>>>>>>>>>> ProcessInfo:" + session["X-PROCESSINFO"]);
-                }
-
-                // using x-no-decrypt to skip decryption for specific sessions
-                if (session.HTTPMethodIs("CONNECT") && session["X-PROCESSINFO"].Contains("brave"))
-                {
-                    Console.WriteLine(">>>>>>>>>>>>>>>> ProcessInfo:" + session["X-PROCESSINFO"]);
-                    session["x-no-decrypt"] = "boring process";
-                }
 
                 try
                 {
@@ -113,19 +93,9 @@ namespace CaptureTraffic
             }
             */
 
-
-            FiddlerApplication.BeforeResponse += session =>
-            {
-
-                if (session.uriContains("example.com"))
-                {
-                    Console.WriteLine($"{session.id}:HTTP {session.responseCode} for {session.fullUrl}");
-
-                    // using utilDecodeResponse and utilReplaceInResponse to modify a response
-                    session.utilDecodeResponse();
-                    session.utilReplaceInResponse("<h1>", "<h3><i>");
-                    session.utilReplaceInResponse("</h1>", "</i></h3>");
-                }
+            /*
+            Fiddler.FiddlerApplication.BeforeResponse += session => {
+                // Console.WriteLine($"{session.id}:HTTP {session.responseCode} for {session.fullUrl}");
 
                 // Uncomment the following two statements to decompress/unchunk the
                 // HTTP response and subsequently modify any HTTP responses to replace 
@@ -133,7 +103,7 @@ namespace CaptureTraffic
                 // set session.bBufferResponse = true inside the BeforeRequest event handler above.
                 //
                 //session.utilDecodeResponse(); session.utilReplaceInResponse("Telerik", "Progress");
-            };
+            };*/
 
             FiddlerApplication.AfterSessionComplete += session =>
             {
@@ -185,9 +155,9 @@ namespace CaptureTraffic
             }
 
             // Once the root certificate is set up, ensure it's trusted.
-            if (!CertMaker.rootCertIsTrusted())
+            if (!CertMaker.IsRootCertificateTrusted())
             {
-                CertMaker.trustRootCert();
+                CertMaker.TrustRootCertificate();
             }
         }
 
@@ -199,11 +169,8 @@ namespace CaptureTraffic
                     .RegisterAsSystemProxy()
                     .ChainToUpstreamGateway()
                     .DecryptSSL()
-                    .OptimizeThreadPool()
+                    .EnableHTTP2()
                     .Build();
-
-
-            CONFIG.DecryptWhichProcesses = ProcessFilterCategories.Browsers;
 
             FiddlerApplication.Startup(startupSettings);
 
@@ -300,7 +267,7 @@ namespace CaptureTraffic
                 sessionsLock.EnterReadLock();
                 if (sessions.Any())
                 {
-                    bool success = Utilities.WriteSessionArchive(filename, sessions.ToArray(), password, false);
+                    bool success = Utilities.WriteSessionArchive(filename, sessions.ToArray(), password);
                     response = $"{(success ? "Wrote" : "Failed to save")}: {filename}";
                 }
                 else
@@ -322,16 +289,15 @@ namespace CaptureTraffic
 
         private static void ReadSessions(ICollection<Session> sessions)
         {
-            string sazFilename = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + Path.DirectorySeparatorChar +
-                "ToLoad.saz";
+            string sazFilename = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + Path.DirectorySeparatorChar + "ToLoad.saz";
 
-            Session[] loaded = Utilities.ReadSessionArchive(sazFilename, false, "", (file, part) =>
+            Session[] loaded = Utilities.ReadSessionArchive(sazFilename, "", (file, part) =>
             {
                 Console.WriteLine($"Enter the password for { part } (or just hit Enter to cancel):");
                 string sResult = Console.ReadLine();
                 Console.WriteLine();
                 return sResult;
-            });
+            }, out string sazVersion);
 
             if (loaded == null || loaded.Length == 0)
             {
